@@ -14,12 +14,12 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "httpx",
+    "hypothesis",
+    "mypy",
     "pytest",
     "pytest-cov",
-    "hypothesis",
     "ruff",
-    "mypy",
-    "httpx",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -35,6 +35,7 @@ source = ["geopulse"]
 
 [tool.coverage.report]
 show_missing = true
+fail_under = 90
 
 [tool.ruff]
 target-version = "py314"

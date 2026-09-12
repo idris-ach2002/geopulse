@@ -1,3 +1,5 @@
+"""GeoPulse FastAPI entrypoint."""
+
 from fastapi import FastAPI
 
 app = FastAPI(
@@ -8,14 +10,11 @@ app = FastAPI(
 
 @app.get("/health/live")
 async def health_live() -> dict[str, str]:
-    """Return the liveness status of the API process."""
+    """Return process liveness."""
     return {"status": "ok"}
 
 
 @app.get("/health/ready")
 async def health_ready() -> dict[str, str]:
-    """Return the readiness status.
-
-    V0 has no external mandatory dependency yet.
-    """
+    """Return V0 readiness."""
     return {"status": "ready"}
