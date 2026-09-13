@@ -57,3 +57,21 @@ def test_resource_empty_name() -> None:
             ),
             created_at=datetime.now(UTC),
         )
+
+
+def test_resource_naive_created_at_rejected() -> None:
+    with pytest.raises(InvalidResourceError):
+        Resource(
+            id=uuid4(),
+            name="Water point",
+            category=ResourceCategory.WATER,
+            location=Location(45, 5, 10),
+            provider=Provider(uuid4(), "City Hall"),
+            availability=Availability(
+                capacity=10,
+                available=5,
+                observed_at=datetime.now(UTC),
+                received_at=datetime.now(UTC),
+            ),
+            created_at=datetime.now(),
+        )
