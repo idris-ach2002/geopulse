@@ -1,5 +1,8 @@
+from dataclasses import FrozenInstanceError
+
 import pytest
 
+from geopulse.domain.exceptions import InvalidLocationError
 from geopulse.domain.models.location import Location
 
 
@@ -14,7 +17,7 @@ def test_valid_location_creation() -> None:
 
 
 def test_latitude_out_of_range() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidLocationError):
         Location(
             latitude=100,
             longitude=5,
@@ -23,7 +26,7 @@ def test_latitude_out_of_range() -> None:
 
 
 def test_longitude_out_of_range() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidLocationError):
         Location(
             latitude=45,
             longitude=200,
@@ -32,7 +35,7 @@ def test_longitude_out_of_range() -> None:
 
 
 def test_negative_accuracy_rejected() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidLocationError):
         Location(
             latitude=45,
             longitude=5,
@@ -41,7 +44,11 @@ def test_negative_accuracy_rejected() -> None:
 
 
 def test_location_is_immutable() -> None:
-    location = Location(45, 5, 10)
+    location = Location(
+        latitude=45,
+        longitude=5,
+        accuracy_meters=10,
+    )
 
-    with pytest.raises(Exception):
+    with pytest.raises(FrozenInstanceError):
         location.latitude = 50

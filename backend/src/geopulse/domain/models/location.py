@@ -1,4 +1,7 @@
+import math
 from dataclasses import dataclass
+
+from geopulse.domain.exceptions import InvalidLocationError
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,11 +21,20 @@ class Location:
 
     def __post_init__(self) -> None:
 
+        if not math.isfinite(self.latitude):
+            raise InvalidLocationError("Latitude must be finite")
+
+        if not math.isfinite(self.longitude):
+            raise InvalidLocationError("Longitude must be finite")
+
+        if not math.isfinite(self.accuracy_meters):
+            raise InvalidLocationError("Accuracy must be finite")
+
         if not -90 <= self.latitude <= 90:
-            raise ValueError(f"Invalid latitude: {self.latitude}")
+            raise InvalidLocationError(f"Invalid latitude: {self.latitude}")
 
         if not -180 <= self.longitude <= 180:
-            raise ValueError(f"Invalid longitude: {self.longitude}")
+            raise InvalidLocationError(f"Invalid longitude: {self.longitude}")
 
         if self.accuracy_meters < 0:
-            raise ValueError(f"Invalid accuracy: {self.accuracy_meters}")
+            raise InvalidLocationError(f"Invalid accuracy: {self.accuracy_meters}")
