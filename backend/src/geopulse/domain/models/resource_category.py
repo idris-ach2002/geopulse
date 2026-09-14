@@ -2,10 +2,14 @@ from enum import StrEnum
 
 
 class ResourceCategory(StrEnum):
-    """
-    Category of a GeoPulse resource.
-    """
+    """Stable internal resource categories."""
 
+    PARKING = "parking"
+    EV_CHARGING = "ev_charging"
+    PHARMACY = "pharmacy"
+    SHOP = "shop"
+
+    # Extensions already used by current development fixtures/tests.
     WATER = "water"
     FOOD = "food"
     HEALTH = "health"

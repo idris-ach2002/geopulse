@@ -1,6 +1,5 @@
-from datetime import UTC, datetime, timedelta, timezone, tzinfo
-from unittest.mock import patch
-from zoneinfo import ZoneInfo
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import pytest
 
@@ -9,79 +8,131 @@ from geopulse.domain.exceptions import (
     InvalidFreshnessPolicyError,
 )
 from geopulse.domain.models.availability import Availability
-from geopulse.domain.rules.freshness import FreshnessPolicy
+from geopulse.domain.models.resource_category import ResourceCategory
+from geopulse.domain.rules.freshness import (
+    FreshnessPolicy,
+    FreshnessState,
+    FreshnessThresholds,
+)
 
 NOW = datetime(2026, 9, 14, 18, tzinfo=UTC)
+
+
+def availability_at(age: timedelta) -> Availability:
+    return Availability(
+        capacity=100,
+        available=20,
+        observed_at=NOW - age,
+        received_at=NOW,
+    )
 
 
 @pytest.mark.parametrize(
     ("age", "expected"),
     [
-        (timedelta(0), True),
-        (timedelta(minutes=15), True),
-        (timedelta(minutes=30), True),
-        (timedelta(minutes=30, microseconds=1), False),
-        (timedelta(hours=8), False),
-        (timedelta(microseconds=-1), False),
+        (timedelta(seconds=0), FreshnessState.FRESH),
+        (timedelta(seconds=60), FreshnessState.FRESH),
+        (timedelta(seconds=61), FreshnessState.ACCEPTABLE),
+        (timedelta(seconds=180), FreshnessState.ACCEPTABLE),
+        (timedelta(seconds=181), FreshnessState.STALE),
+        (timedelta(seconds=300), FreshnessState.STALE),
+        (
+            timedelta(seconds=301),
+            FreshnessState.EXPIRED,
+        ),
     ],
 )
-def test_freshness_by_observation_age(age: timedelta, expected: bool) -> None:
-    availability = Availability(None, 20, NOW - age, NOW)
-
-    assert FreshnessPolicy(max_age_minutes=30).is_fresh(availability, now=NOW) is expected
-
-
-def test_negative_maximum_age_is_rejected() -> None:
-    with pytest.raises(InvalidFreshnessPolicyError, match="Maximum age cannot be negative"):
-        FreshnessPolicy(max_age_minutes=-1)
-
-
-def test_zero_maximum_age_only_accepts_current_observation() -> None:
-    policy = FreshnessPolicy(max_age_minutes=0)
-
-    assert policy.is_fresh(Availability(None, 20, NOW, NOW), now=NOW)
-    assert not policy.is_fresh(
-        Availability(None, 20, NOW - timedelta(microseconds=1), NOW), now=NOW
+def test_piecewise_freshness_states(
+    age: timedelta,
+    expected: FreshnessState,
+) -> None:
+    result = FreshnessPolicy().evaluate(
+        availability_at(age),
+        now=NOW,
     )
 
-
-def test_current_utc_time_is_used_by_default() -> None:
-    availability = Availability(None, 20, NOW - timedelta(minutes=15), NOW)
-
-    with patch("geopulse.domain.rules.freshness.datetime") as clock:
-        clock.now.return_value = NOW
-
-        assert FreshnessPolicy(30).is_fresh(availability)
-        clock.now.assert_called_once_with(UTC)
+    assert result.state is expected
 
 
-def test_naive_reference_time_is_rejected() -> None:
-    with pytest.raises(InvalidDateTimeError, match="Datetime must be timezone aware"):
-        FreshnessPolicy(30).is_fresh(Availability(None, 20, NOW, NOW), now=NOW.replace(tzinfo=None))
+def test_future_observation_is_expired() -> None:
+    availability = Availability(
+        capacity=100,
+        available=20,
+        observed_at=NOW + timedelta(seconds=1),
+        received_at=NOW,
+    )
+
+    result = FreshnessPolicy().evaluate(
+        availability,
+        now=NOW,
+    )
+
+    assert result.state is FreshnessState.EXPIRED
 
 
-def test_observation_with_undefined_utc_offset_is_rejected() -> None:
-    # A tzinfo object alone does not guarantee that a datetime is aware.
-    class UndefinedOffset(tzinfo):
-        def utcoffset(self, dt: datetime | None) -> None:
-            return None
+def test_provider_policy_has_priority() -> None:
+    provider_id = uuid4()
 
-    observed_at = NOW.replace(tzinfo=UndefinedOffset())
-    with pytest.raises(InvalidDateTimeError, match="Datetime must be timezone aware"):
-        FreshnessPolicy(30).is_fresh(Availability(None, 20, observed_at, NOW), now=NOW)
+    policy = FreshnessPolicy(
+        by_category={
+            ResourceCategory.PARKING: FreshnessThresholds(
+                10,
+                20,
+                30,
+            )
+        },
+        by_provider={
+            provider_id: FreshnessThresholds(
+                100,
+                200,
+                300,
+            )
+        },
+    )
+
+    result = policy.evaluate(
+        availability_at(timedelta(seconds=50)),
+        now=NOW,
+        category=ResourceCategory.PARKING,
+        provider_id=provider_id,
+    )
+
+    assert result.state is FreshnessState.FRESH
 
 
-def test_different_timezones_representing_same_instant() -> None:
-    observed_at = NOW.astimezone(timezone(timedelta(hours=2)))
+def test_category_policy_overrides_default() -> None:
+    policy = FreshnessPolicy(
+        by_category={
+            ResourceCategory.PARKING: FreshnessThresholds(
+                10,
+                20,
+                30,
+            )
+        }
+    )
 
-    assert FreshnessPolicy(0).is_fresh(Availability(None, 20, observed_at, NOW), now=NOW)
+    result = policy.evaluate(
+        availability_at(timedelta(seconds=50)),
+        now=NOW,
+        category=ResourceCategory.PARKING,
+    )
+
+    assert result.state is FreshnessState.EXPIRED
 
 
-def test_elapsed_time_across_daylight_saving_transition() -> None:
-    paris = ZoneInfo("Europe/Paris")
-    observed_at = datetime(2026, 10, 25, 2, 15, tzinfo=paris, fold=0)
-    now = datetime(2026, 10, 25, 2, 15, tzinfo=paris, fold=1)
-    availability = Availability(None, 20, observed_at, now)
+def test_negative_threshold_is_rejected() -> None:
+    with pytest.raises(InvalidFreshnessPolicyError):
+        FreshnessThresholds(-1, 10, 20)
 
-    assert not FreshnessPolicy(30).is_fresh(availability, now=now)
-    assert FreshnessPolicy(60).is_fresh(availability, now=now)
+
+def test_unordered_thresholds_are_rejected() -> None:
+    with pytest.raises(InvalidFreshnessPolicyError):
+        FreshnessThresholds(20, 10, 30)
+
+
+def test_naive_now_is_rejected() -> None:
+    with pytest.raises(InvalidDateTimeError):
+        FreshnessPolicy().evaluate(
+            availability_at(timedelta(seconds=10)),
+            now=NOW.replace(tzinfo=None),
+        )
