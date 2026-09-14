@@ -20,3 +20,11 @@ class InvalidProviderError(DomainError):
 
 class InvalidOpeningHoursError(DomainError):
     """Raised when opening hours are invalid."""
+
+
+class InvalidFreshnessPolicyError(DomainError):
+    """Raised when a freshness policy configuration is invalid."""
+
+
+class InvalidDateTimeError(DomainError):
+    """Raised when a datetime is not timezone aware."""
